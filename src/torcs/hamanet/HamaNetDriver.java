@@ -1,3 +1,5 @@
+//Gruppe: Björn Kowalzik, Adrian Hernaiz Garcia, Oliver Wroblewski
+
 package torcs.hamanet;
 
 import java.util.Arrays;
@@ -13,26 +15,15 @@ import torcs.scr.SensorModel;
  */
 public class HamaNetDriver extends Driver {
 	
-	double lane_angle = Math.PI / 18;
-	double m_width = 0.4;
-	double minSpeed = 100;
-	int stuck = 0;
-
-	private int tickcounter = 0;
+	private double lane_angle = Math.PI / 18;
+	private double m_width = 0.4;
+	private double minSpeed = 100;
+	private int deadticks = 0;
 	private int myGear = 1;
 	
 	public Action control(SensorModel sm) {
 
-		// adjust tick counter
-		tickcounter++;
-
-		// create new action object to send our commands to the server
 		Action action = new Action();
-		System.out.println(sm.getTrackEdgeSensors()[9]);
-		System.out.println(sm.getTrackPosition());
-		System.out.println(sm.getAngleToTrackAxis());
-		System.out.println(stuck);
-		System.out.println("----------------");
 
 		if (Math.abs(sm.getTrackPosition()) > 1 && Math.abs(sm.getAngleToTrackAxis()) > ((5.0/9.0)*Math.PI))
 		{
@@ -55,6 +46,9 @@ public class HamaNetDriver extends Driver {
 		
 		//System.out.println(sm.getTrackEdgeSensors()[9]);
 
+		//check speed
+		speedAdaption(sm, action);
+		
 		//gear
 		if (sm.getRPM() >= 8000)
 		{
@@ -67,8 +61,27 @@ public class HamaNetDriver extends Driver {
 		if (myGear == 0) myGear = 1;
 		action.gear = myGear;
 		
+		//unstuck
+		if (Math.abs(sm.getTrackPosition())>1)
+		{
+			//action.steering = targetLane(sm,0);
+			action.brake = 0;
+			action.accelerate = 1;
+		}
+		
+		if (sm.getRPM()>100 && sm.getSpeed() < 5) deadticks++;
+		else deadticks = 0;
+		if (deadticks > 150)
+		{
+			action.gear = -1;
+			action.steering = Math.signum(action.gear*targetLane(sm, 0));
+			action.accelerate = 1;
+			deadticks = 0;
+		}
+		
 		return action;
 	}
+	
 	private int curveAhead(SensorModel sm)
 	{
 		double[] te = sm.getTrackEdgeSensors();
@@ -117,6 +130,57 @@ public class HamaNetDriver extends Driver {
 		if (Math.min(u2, l2) >= 2) return 1;
 		return 0;
 	}
+	
+	private void speedAdaption(SensorModel sm, Action action){
+		double dircetionAng = getMax(sm.getTrackEdgeSensors());
+		double maxSpeed = getMaxSpeed(dircetionAng);
+		
+		//if(dircetionAng >= 199) maxSpeed = 250;
+		if(maxSpeed > sm.getSpeed()) {
+			action.accelerate = 1;
+			action.brake = 0;
+		}
+		if(maxSpeed < sm.getSpeed()) {
+			if(sm.getSpeed() > 100 && dircetionAng > 150)
+				System.out.println("if1" + " direc" + dircetionAng +"macspeed" + maxSpeed);
+				action.accelerate = 0;
+				action.gear = myGear-1;
+				action.brake = 1;
+			if(sm.getSpeed() > 80 && dircetionAng < 80)
+				action.accelerate = 0;
+				System.out.println("if2" + " direc " + dircetionAng +" macspeed " + maxSpeed);
+				action.brake = 1;
+			if(sm.getSpeed() > 60 && dircetionAng < 60)
+				action.accelerate = 0;
+				System.out.println("if4" + " direc" + dircetionAng +"macspeed" + maxSpeed);
+				action.brake = 0.7;
+			if(sm.getSpeed() > 40 && dircetionAng < 40)
+				action.accelerate = 0;
+				System.out.println("if5" + " direc" + dircetionAng +"macspeed" + maxSpeed);
+				action.brake = 0.6;
+			if(sm.getSpeed() > 20 && dircetionAng < 25)
+				action.accelerate = 0;
+				System.out.println("if6" + " direc" + dircetionAng +"macspeed" + maxSpeed);
+				action.brake = 0.5;
+				//action.gear = myGear-1;
+			
+		}
+
+		System.out.println(maxSpeed + " " + dircetionAng);
+		
+	}
+	
+	private double getMaxSpeed(double focus){
+		return 3.6*(Math.sqrt(9.80665*1.3*focus));
+	}
+	
+	private double getMax(double [] array){
+		double max = 0;
+		for(int i = 0; i < array.length-1;i++)
+			if(array[i] > max) max = array[i];
+		return max;
+	}
+	
 	private boolean angleSubPie(double a, double b, double c, double alpha)
 	{
 		double x = Math.sqrt(a*a+c*c-2*a*c*Math.cos(2*alpha));
